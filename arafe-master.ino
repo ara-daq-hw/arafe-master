@@ -1,6 +1,6 @@
 //ARAFE master design
 //Design by: Patrick Alison, Brian Clark, Thomas Meures
-//meures@icecube.wisc.edu, clark.2668@osu.edu
+//meures@icecube.wisc.edu, clark.2668@osu.edu, allison.122@osu.edu
 //Accombanying documentation:
 //****ARAFE slave protocol:
 //****ARAFE master register map:
