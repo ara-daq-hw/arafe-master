@@ -1,35 +1,91 @@
+//ARAFE master design
+//Design by: Patrick Alison, Brian Clark, Thomas Meures
+//meures@icecube.wisc.edu
+//Accombanying documentation:
+//****ARAFE slave protocol:
+//****ARAFE master register map:
+//
+//Description:
+//**** This firmware module sets up the functionality for the ARAFE master board to receive communications via I2C or a serial debug port to
+//**** control the ARAFE-PC boards and communicate with them. All communications are stored in registers. These registers are constantly checked
+//**** and action is taken if a control bit in a register is high.
+//The incoming communications from the serial debug port and I2C are interpreted in the following way:
+//**** byte 1: pointer to register, to which to the following data should be written to.
+//**** byte 2..x: data to be written to the register. If there are several data bytes, the pointer will increment with every written byte.
+//************** NOTE: Only in case of a Slave control communication several bytes need to be written (SLAVECTL, COMMAND, ARG).
+//Difference between I2C and Serial debug port:
+//****I2C: data is delimited by standard I2C protocol. NOTE: The pointer and all data must be part of one I2C transfer.
+//****Serial debug port: This is a custom design: Start delimiter "c", end delimiter "!". Everything in between will be treated as one transfer.
+//********************** NOTE: When typing in a serial monitor, the pointer and all data bytes must be put in as 2-digit hexadecimal numbers. 
+//********************** Example: 0x8 has to be typed as 08.
+unsigned char currentRegisterPointer = 0;
+unsigned char i2cRegisterMap[8] ={0,0,0,0,0,0,0,0};
+//The register map is:
+//***** Register 0: POWERCTL
+//************* Bits [3:0]: indicates which slaves are currently powered on
+//************* Bit [7]: Actually update power based on bits [3:0]. Clear when update is complete.
+//***** Register 1: POWERDFLT
+//************* Bits [3:0]: indicates which slaves are currently powered on by default
+//************* Bit [7]: Actually update the non-volatile copy of this register. Clear when update is complete.
+//***** Register 2: MONCTL
+//************* Bits [2:0]: Monitoring value to convert (see next page)
+//************* Bits [5:4]: Low 2 bits of the conversion
+//************* Bit [7]: Actually convert the monitoring value. Clear when MONITOR/MONCTL are updated.
+//***** Register 3: MONITOR
+//************* Bits [7:0]: High 8 bits for the conversion
+//***** Register 4: SLAVECTL
+//************* Bits [1:0]: Destination for slave command
+//************* Bit [7]: Actually send the command. Clear when response received or timeout received.
+//************* Bit [6]: Set if command timed out
+//***** Register 5: COMMAND
+//************* Bits [7:0]: Command to send to slave
+//***** Register 6: ARG
+//************* Bits [7:0]: Argument to send to slave
+//***** Register 7: ACK
+//************* Bits [7:0] Acknowledged value received
+
+//This allows to see some extra communications:
+#define DEBUG_MODE 0
+
+//Slave address for I2C communication:
 int I2C_ADDRESS = 30;
 
 //Set up pins:
-//CARRIER clock for UART comms
+//CARRIER for UART communication with ARAFE_PC boards
 const int CARRIER = P3_4;
-//Power enable for slave boards
+//Power enable pins for slave boards:
 const int EN[4] = {18,16,32,30};  //{LED1, LED2, LED3, LED4}; for debug
 //Communications select output:
 const int COMMS_SEL[2] = {9,10};
+//Analog ports for monitoring:
+int analogPort[8] = { 14, 17, 15, 13, 33, 34, 139, 138};
+//0:    15V_MON
+//1:    CUR0, current to Slave 0
+//2:    CUR1, current to Slave 1
+//3:    CUR2, current to Slave 2
+//4:    CUR3, current to Slave 3
+//5:    !FAULT
+//6:    3.3VCC
+//7:    device temperature
 
-
-
+//Need Wire library for I2C comms.
 #include <Wire.h>
 
-
+//The following structure is set up to store and recall a default start setup:
+//The signature: Is checked on startup, to see if a setup has been stored already. If not, all slaves are kept powered off.
 #define INFO_SIGNATURE 0x03
+//The is the firmware revision: For now this is just there but ignored.
 #define CUR_REVISION 1
 
+//The info structure:
 typedef struct info_t {
   unsigned char signature;              //< Indicates if the info structure is up to date.
   unsigned char revision;               //< What board revision this is.
   unsigned char power_default;  //< Holds the default values for the power scheme of the slaves.
 } info_t;
 
+//The location to store this in non-volatile memory: The address 0x1800 points to the info section of the memory.
 info_t *my_info = (info_t *) 0x1800;
-
-unsigned char currentRegisterPointer = 0;
-unsigned char i2cRegisterMap[8] ={0,0,0,0,0,0,0,0};
-
-int analogPort[8] = { 14, 17, 15, 13, 33, 34, 139, 138};
-//  int analogPort = { A1, A13, A2, A0, A6, A7, VCC(A11), TEMPSENSOR}
-
 
 
 void setup()
@@ -54,7 +110,7 @@ void setup()
     // when done, set the signature
    my_info->signature = INFO_SIGNATURE;
   }
-  //Write values to register map
+  //Write values to default power register:
   i2cRegisterMap[1] = my_info->power_default;
   
   //Actually set this up:
@@ -64,55 +120,49 @@ void setup()
   power(0x3, (i2cRegisterMap[1] >> 3 ) &  0x1);
   
   
-    //Divide SMCLK speed by 2 --> 8MHz.
-//  CSCTL3 |= (1u << 4);
-  //Set up 8MHz clock on P3.4 as CARRIER signal:
-  //Make it TB1.1: or maybe SMCLK: Right now SMCLK: FIXME: Make it TB1.1 and set up timer. Other modules have ddifficulties with a changed SMCLK!
+  //Divide SMCLK speed by 2 --> 8MHz. Not executed!!
+  //CSCTL3 |= (1u << 4);
+    
+  //Set up 4MHz clock on P3.4 as CARRIER signal:
+  //**** Use timer-B. Set it up with no clock divider and in Toggle mode. The maximum frequency achievable in this way is 4MHz. 
+  //**** For higher frequencies, mode needs to be set to up or down.
+  //Make the CARRIER pin TB1.1:
   P3DIR |= (1u << 4);
   P3SEL0 |= (1u << 4);
   P3SEL1 &= ~(1u << 4);  //1 for SMCLK, 0 for TB1.1
   
- // pinMode(CARRIER, OUTPUT);
- //igitalWrite(CARRIER, LOW);
   //Setup the counter to use for the CARRIER signal
-
-  //Stop timer:
+  //Stop counter:
   TB1CTL &= (00u << 4);
   //Clear setup:
   TB1CTL |= (1u << 2);
-  
+  //Unclear: I don't thhink this is needed. Should happen automatically.
   TB1CTL &= ~(1u << 2);
   //Select input clock: SMCLK
   TB1CTL |= (1u << 9);
-  //Select clock divider( on division ):
+  //Select clock divider( no division ):
   TB1CTL |= (00u << 6);
   TB1EX0 |= (000u);
   
   //Set timer length to 0xFF:
-//  TB1CTL |= (11u << 11);
+  //This is the default setting
+  // Otherwise, change:
+  // TB1CTL |= (11u << 11);
   //Select compare mode:
   TB1CCTL1 &= (0u << 8); 
   //Set outmod to Toggle:
   TB1CCTL1 |= (100u << 5);  
   //Set compare number:
-//  TB1CCR1 |= (0xf);
   TB1CCR0 |= (0x1);
 
-
-  //Clear setup:
+  //Clear setup again: Probably not needed.
   TB1CTL |= (1u << 2);
-
-  //Set timer to up mode (this starts the timer):
+  //Set timer to up mode (this starts the counter):
   TB1CTL |= (01u << 4);
 
 
 
-
-
-
-
-
-
+  //Make PJ.4, 5 I/O ports. Could move this to the pin-definition file.
   PJSEL0 &= ~(1u << 4);
   PJSEL1 &= ~(1u << 4);
   PJSEL0 &= ~(1u << 5);
@@ -124,20 +174,13 @@ void setup()
   pinMode(COMMS_SEL[0], OUTPUT);
   pinMode(COMMS_SEL[1], OUTPUT);
 
-
-
-
-
-
-
   //Connect CDOUT (comparator D output) to P3.5:
   P3DIR |= (1u << 5);
   P3SEL0 |= (1u << 5);
   P3SEL1 |= (1u << 5);
-  //pinMode(P3_5, OUTPUT);  //FIXME: Do we need to specifically define this as an output.
 
   //Setup I2C connection
-  Wire.begin(I2C_ADDRESS);                 // join i2c bus with address #8: FIXME: Which address should it actually have?
+  Wire.begin(I2C_ADDRESS);       // join i2c bus with address given above.
   Wire.onReceive(receiveEvent);  // register write from I2C master
   Wire.onRequest(requestEvent);  // register read request from I2C master
 
@@ -151,16 +194,13 @@ void setup()
 
 
 
-
-
-
-
+//Start the program:
 void loop()
 {
 
 
   delay(100);
-  //All functionality can be accessed via the Serial debug port. 
+  //All functionality can be accessed via the Serial debug port.
   waitForSerialDebugInput();
 
   //This chaecks the control register for the EXEC signal to go high and starts the requested process.
@@ -171,7 +211,7 @@ void loop()
 
 
 
-//This module 
+//This module handles the serial input if any:
 void waitForSerialDebugInput(){
   char DEBUG_BUFFER[10];
   int DEBUG_BYTES = 0;
@@ -187,15 +227,18 @@ void waitForSerialDebugInput(){
     data = Serial.read();
     if(data=='!'){ inhibit=0;}
     else{
-          DEBUG_BUFFER[DEBUG_BYTES] = data;  
+          DEBUG_BUFFER[DEBUG_BYTES] = data;
+#if DEBUG_MODE  
           Serial.print("Input was:  ");
           Serial.println(int(DEBUG_BUFFER[DEBUG_BYTES]), DEC);
           Serial.print("\n");
+#endif
           DEBUG_BYTES++;
         }
     }
   }
   if(DEBUG_BYTES>1){
+    //Write buffer into register space:
     currentRegisterPointer= (ascii(DEBUG_BUFFER[0]) <<4) | ascii(DEBUG_BUFFER[1]) ;
     currentRegisterPointer&=0x7;
     int howMany = DEBUG_BYTES/2;
@@ -210,7 +253,7 @@ void waitForSerialDebugInput(){
 
 
 
-//ASCII conversion, to be able to use the stupid debug monitor.
+//ASCII conversion, to be able to use the stupid debug monitor. Probably I am just to stupid to understand it.
 uint8_t ascii(char data){
   if(int(data)>47 && int(data)<58){//This is 0 to 9
     return int(data) - 48;
@@ -221,63 +264,75 @@ uint8_t ascii(char data){
   else if(int(data)>96 && int(data)<103){
     return int(data) - 97 +10; 
   }
-
 }
 
 
-
+// This module checks if any of the registers has changed, more precisely if any of the control bits are high. In that 
+// case it takes the appropriate action.
 void waitForControl(){
   
   if(i2cRegisterMap[0] & 0x80){
+#if DEBUG_MODE
       Serial.print("Before:");
       Serial.print(i2cRegisterMap[0]);
       Serial.print(", ");
+#endif
     //Start power control
       power(0x0, (i2cRegisterMap[0] >> 0 ) &  0x1);
       power(0x1, (i2cRegisterMap[0] >> 1 ) &  0x1);
       power(0x2, (i2cRegisterMap[0] >> 2 ) &  0x1);
       power(0x3, (i2cRegisterMap[0] >> 3 ) &  0x1);
       i2cRegisterMap[0]&=~(0x80);
+#if DEBUG_MODE
       Serial.print("After:");
       Serial.print(i2cRegisterMap[0]);
       Serial.print("\n");
-      delay(100);
+#endif
+//      delay(100);
   }
   else if(i2cRegisterMap[1] & 0x80){
+#if DEBUG_MODE
       Serial.print("Before:");
       Serial.print(", ");
       Serial.print(i2cRegisterMap[1]);
+#endif
       //Update default power values
       my_info->power_default = i2cRegisterMap[1] & 0xf;
       i2cRegisterMap[1]&=~(0x80);
+#if DEBUG_MODE
       Serial.print("After:");
       Serial.print(i2cRegisterMap[1]);
       Serial.print("\n");
-      delay(100);
+#endif
+//      delay(100);
   }  
 
   else if(i2cRegisterMap[2] & 0x80){
       i2cRegisterMap[3]=0x0;
+#if DEBUG_MODE
       Serial.print("Before:");
       Serial.print(", ");
       Serial.print(i2cRegisterMap[2]);
       Serial.print(", ");
       Serial.print(i2cRegisterMap[3]);
-
+#endif
     //Convert monitoring value
       uint16_t monData = readMonitoring(i2cRegisterMap[2] & 0x7);
       i2cRegisterMap[2] |= ( (monData & 0x3) << 4 );
       i2cRegisterMap[3] |= ( (monData & 0x3ff) >> 2 );
       i2cRegisterMap[2]&=~(0x80);
+#if DEBUG_MODE
       Serial.print("After:");
       Serial.print(i2cRegisterMap[2]);
       Serial.print(", ");
       Serial.print(i2cRegisterMap[3]);      
       Serial.print("\n");
-      delay(100);
+#endif      
+//      delay(100);
   }  
 
   else if(i2cRegisterMap[4] & 0x80){
+#if DEBUG_MODE
       Serial.print("Before:");
       Serial.print(", ");
       Serial.print(i2cRegisterMap[4]);
@@ -287,8 +342,10 @@ void waitForControl(){
       Serial.print(i2cRegisterMap[6]);
       Serial.print(", ");
       Serial.print(i2cRegisterMap[7]);
+#endif
       //Send command to slave.
       runComms(i2cRegisterMap[4] & 0x3);
+#if DEBUG_MODE
       Serial.print("After:");
       Serial.print(i2cRegisterMap[4]);
       Serial.print(", ");
@@ -298,19 +355,20 @@ void waitForControl(){
       Serial.print(", ");
       Serial.print(i2cRegisterMap[7]);
       Serial.print("\n");
-      delay(100);
+#endif
+//      delay(100);
   }
-  
-  
 }
 
 
 uint16_t readMonitoring(uint8_t num){
   int val=0;
   val = analogRead(analogPort[num]);
+#if DEBUG_MODE
   Serial.print("Monitoring: ");
   Serial.println(val);
   Serial.print("\n");
+#endif
   return uint16_t(val);
 }
   
@@ -334,7 +392,7 @@ void requestEvent() {
 
 
 
-
+///This function wrappes the power control of the slave devices:
 void power(uint8_t dev, uint8_t on){
   if(on){
     digitalWrite(EN[dev], HIGH); 
@@ -344,15 +402,12 @@ void power(uint8_t dev, uint8_t on){
   }
 }
 
-
+//Here the communication to the slave is actually sent:
 int runComms(uint8_t dev){
   //1) Select output port
   select_output(dev);
 
-  //2) Start with comparator setup:
-//  setup_comparator(dev);
-
-  //3) Start communication:
+  //2) Start communication:
   Serial1.write('!');
   Serial1.write('M');
   Serial1.write('!');
@@ -360,10 +415,11 @@ int runComms(uint8_t dev){
   Serial1.write(i2cRegisterMap[6]);
   Serial1.write(0xFF);
 
-  delay(10);
-  //2) Start with comparator setup after message has been sent:
+
+  //3) Start with comparator setup after message has been sent:
+  delay(10); //Wait a moment because transmit echo is picked up by the RX line. 10us should be sufficient.
   setup_comparator(dev);
-  //Wait for response:
+  //4) Wait for response:
   if(0 == waitForResponse(dev) ){
 
     //Reset control register after succesfull transmission.
@@ -373,7 +429,7 @@ int runComms(uint8_t dev){
     i2cRegisterMap[4]|=(1u << 6);
     i2cRegisterMap[4]&=~(1u << 7);
   }
-  //End with comparator shutdown for power saving (FIXME: do we need this?):
+  //5) End with comparator shutdown for power saving (FIXME: do we need this?):
   shutdown_comparator();
   return 0;
 }
@@ -449,18 +505,23 @@ void shutdown_comparator(){
   CDCTL0 &= ~(1u <<7);//V+
 }
 
-
+//We always expect 5 bytes back. This is used for the timeout. It works for now, needs to be updated if the comms protocol changes:
 const int expectedBytes_UART = 5;
 char c[expectedBytes_UART];
 int waitForResponse(uint8_t dev){
+#if DEBUG_MODE
   Serial.print("wait for response \n");
+#endif
   memset(c, 0, sizeof(c));
+  //FIXME: Change this to look for a delimiter, rather then just the right number of bytes. Maybe both!
   int timeout = Serial1.readBytes(c, expectedBytes_UART);
+#if DEBUG_MODE
   Serial.print("Received: ");
   Serial.print(c[0]);
   Serial.print(c[1]);
   Serial.print(c[2]);
   Serial.print(c[3]);
+#endif
   if(c[0]=='!' && c[1]=='S' && c[2]=='!'){//Incoming response from slave
     i2cRegisterMap[7] = c[3];
     return 0;
