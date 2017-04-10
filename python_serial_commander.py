@@ -78,45 +78,47 @@ class Prompt(Cmd):
 		elif 0 > int(arguments[3]) or int(arguments[3]) > 127: #only allow correct setting numbers
 			print "Wrong setting number. Setting numbers are whole numbers 0-127"
 		else: 
-			
-			if arguments[2]==0:
-				settingchannel=int(arguments[1])
-			else:
-				settingchannel=4+int(arguments[1])
+			if arguments[2]==0: #if command is signal
+				settingchannel=int(arguments[1]) #copy the channel right over
+			else: #if its trigger
+				settingchannel=4+int(arguments[1]) #add four to it
 			data = '0%d' %(settingchannel)#create the proper command
 			command = 'c05%s!' %(data) #create the command
-			#ser.write(command) #actually write the command to the serial line
+			ser.write(command) #actually write the command to the serial line
 
 			#listen to the output and clear the line
-			#line = ser.readline()
-			#while len(line) >0:
-			#	print line.rstrip()
-			#	line = ser.readline()
+			line = ser.readline()
+			while len(line) >0:
+				print line.rstrip()
+				line = ser.readline()
 			
-			arg = hex(int(arguments[3])).lstrip('0x') #convert it to hex
-			argument = 'c06%s!' %(arg) #creates the proper argument
-			#ser.write(argument) #actually write the argument to the serial line
+			#okay, now to figure out the setting
+			arg = hex(int(arguments[3])).lstrip('0x') #convert it to hex #convert the setting straight to a hex number
+			argument = 'c06%s!' %(arg) #creates the proper argument #assign it to a command with its register
+			ser.write(argument) #actually write the argument to the serial line
 
 			#listen to the output and clear the line
-			#line = ser.readline()
-			#while len(line) >0:
-			#	print line.rstrip()
-			#	line = ser.readline()
+			line = ser.readline()
+			while len(line) >0:
+				print line.rstrip()
+				line = ser.readline()
 		
-			slaveBinary = "{0:b}".format(int(arguments[0]))
-			print slaveBinary
+			#picking the slave
+			slaveBinary = "{0:b}".format(int(arguments[0])) #should convert which slave it is to binary
 			if int(slaveBinary) == 0 or int(slaveBinary) == 1:
-				slaveCtrl = '1000000%s' %(str(slaveBinary))			
+				slaveCtrl = '1000000%s' %(str(slaveBinary))
 			else:
 				slaveCtrl = '100000%s' %(str(slaveBinary))
 
-			#ser.write(slaveCtrl) #actually write the slaveCtrl to the serial line
+			slaveCtrlHex = hex(int(slaveCtrl)).lstrip('0x') #convert it to hex
+			slaveControl = 'c05%s!' %(slaveCtrlHex) #creates the proper argument #assign it to a command with its register
+			ser.write(slaveControl) #actually write the slaveCtrl to the serial line
 
 			#listen to the output and clear the line
-			#line = ser.readline()
-			#while len(line) >0:
-			#	print line.rstrip()
-			#	line = ser.readline()
+			line = ser.readline()
+			while len(line) >0:
+				print line.rstrip()
+				line = ser.readline()
 			
 def start_serial(try_port):                                         
 	print "got inside start_serial"
