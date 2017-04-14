@@ -78,9 +78,12 @@ class Prompt(Cmd):
 		elif 0 > int(arguments[3]) or int(arguments[3]) > 127: #only allow correct setting numbers
 			print "Wrong setting number. Setting numbers are whole numbers 0-127"
 		else: 
+			
+			#set the command register
+			#########################	
 			if arguments[2]==0: #if command is signal
-				settingchannel=int(arguments[1]) #copy the channel right over
-			else: #if its trigger
+				settingchannel=int(arguments[1]) #copy the channel number right over
+			else: #if the command is trigger
 				settingchannel=4+int(arguments[1]) #add four to it
 			data = '0%d' %(settingchannel)#create the proper command
 			command = 'c05%s!' %(data) #create the command
@@ -92,6 +95,9 @@ class Prompt(Cmd):
 				print line.rstrip()
 				line = ser.readline()
 			
+
+			#set the argument register
+			#########################
 			#okay, now to figure out the setting
 			arg = hex(int(arguments[3])).lstrip('0x') #convert it to hex #convert the setting straight to a hex number
 			argument = 'c06%s!' %(arg) #creates the proper argument #assign it to a command with its register
@@ -103,15 +109,29 @@ class Prompt(Cmd):
 				print line.rstrip()
 				line = ser.readline()
 		
-			#picking the slave
-			slaveBinary = "{0:b}".format(int(arguments[0])) #should convert which slave it is to binary
-			if int(slaveBinary) == 0 or int(slaveBinary) == 1:
-				slaveCtrl = '1000000%s' %(str(slaveBinary))
-			else:
-				slaveCtrl = '100000%s' %(str(slaveBinary))
 
+			#set the slave control
+			#########################
+			#slaveBinary = "{0:b}".format(int(arguments[0])) #should convert which slave it is to binary
+			#if int(slaveBinary) == 0 or int(slaveBinary) == 1:
+			#	slaveCtrl = '1000000%s' %(str(slaveBinary))
+			#else:
+			#	slaveCtrl = '100000%s' %(str(slaveBinary))
+
+			#assign the slave binary codes from arafe_master_stuff.pdf pg. 5
+			if int(arguments[0]) == 0:
+				slaveBinary = '10'
+			elif int(arguments[0]) == 1:
+				slaveBinary = '11'
+			elif int(arguments[0]) == 2:
+				slaveBinary = '00'
+			elif int(arguments[0]) == 3:
+				slaveBinary = '01'
+
+			slaveCtrl = '100000%s' %(slaveBinary)
+			print slaveCtrl
 			slaveCtrlHex = hex(int(slaveCtrl)).lstrip('0x') #convert it to hex
-			slaveControl = 'c05%s!' %(slaveCtrlHex) #creates the proper argument #assign it to a command with its register
+			slaveControl = 'c04%s!' %(slaveCtrlHex) #creates the proper argument #assign it to a command with its register
 			ser.write(slaveControl) #actually write the slaveCtrl to the serial line
 
 			#listen to the output and clear the line
