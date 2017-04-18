@@ -87,6 +87,9 @@ typedef struct info_t {
 //The location to store this in non-volatile memory: The address 0x1800 points to the info section of the memory.
 info_t *my_info = (info_t *) 0x1800;
 
+void enableXtal() {
+}
+
 
 void setup()
 {
@@ -199,7 +202,6 @@ void loop()
 {
 
 
-  delay(100);
   //All functionality can be accessed via the Serial debug port.
   waitForSerialDebugInput();
 
