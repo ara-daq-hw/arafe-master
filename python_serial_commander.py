@@ -100,8 +100,14 @@ class Prompt(Cmd):
 			#########################
 			#okay, now to figure out the setting
 			arg = hex(int(arguments[3])).lstrip('0x') #convert it to hex #convert the setting straight to a hex number
+			if (int(arguments[3]) < 16): #the argument needs a 2 digit number, so all hex numbers below 16 need an additional digit
+				arg = '0%s' %(arg)
+				if (int(arguments[3])==0): #if desired setting is 0, need to put in the argument manually, since hex(0) is an empty string
+					arg = '00'
+
 			argument = 'c06%s!' %(arg) #creates the proper argument #assign it to a command with its register
 			ser.write(argument) #actually write the argument to the serial line
+
 			#listen to the output and clear the line
 			line = ser.readline()
 			while len(line) >0:
@@ -128,10 +134,9 @@ class Prompt(Cmd):
 			#	slaveBinary = '01'			
 
 			#slaveCtrl = '100000%s' %(slaveBinary)
-			
-			print hex(int(slaveCtrl, 2)).lstrip('0x')
+		
 			slaveCtrlHex = hex(int(slaveCtrl, 2)).lstrip('0x') #convert it to hex
-			print type(slaveCtrlHex)
+			
 			slaveControl = 'c04%s!' %(slaveCtrlHex) #creates the proper argument #assign it to a command with its register
 			#slaveControl = 'c0480!'
 			ser.write(slaveControl) #actually write the slaveCtrl to the serial line
