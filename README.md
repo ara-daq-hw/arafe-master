@@ -23,7 +23,10 @@ When the last byte of the program is sent, the bootloader will reboot (so
 the LED will begin blinking) and after 10 seconds, the new program will begin
 running.
 
-Hexfile outputs from Energia need to be converted using the process_hex.py
-script. This relocates the vector table from 0xFF80 to 0xFB80 and also fills out
-all unspecified memory spaces with 0xFF. It also throws an error if the size
-of the main sketch exceeds the space available.
+Hexfile outputs from Energia need to be processed slightly. First, there is
+a line that the 'hexfile' module for python may not recognize ('record 3').
+This line should likely start with ":04000003". Delete this line. Next, process
+the hex file using the process_hex.py script. This relocates the vector table
+from 0xFF80 to 0xFB80 and also fills out all unspecified memory spaces with
+0xFF. It also throws an error if the size of the main sketch exceeds the
+space available. Use it like "./process_hex.py hexfile.hex outfile".
