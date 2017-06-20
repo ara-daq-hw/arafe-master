@@ -208,7 +208,6 @@ void setup()
   Serial1.begin(9600);           // start serial for slave communication.
   Serial1.setTimeout(1000);      //Serial redBytes will timeout after 1000ms (this is only for information. The default is 1000ms anyway).
 
-  analogReference(INTERNAL1V5);
 }
 
 int cmdAssign(int argc, char **argv) {
@@ -236,9 +235,9 @@ int cmdHelp(int argc, char **argv) {
     Serial.println("w: w [register number] [value] - write value to register");
     Serial.println("sn: sn [serial number] - assign serial number");
     Serial.println("d: d - print all registers");
-    Serial.println("?: ? [regs|mons] - prints help. ? regs/? mons gives more info.");
+    Serial.println("help: help [regs|mons] - prints help. help regs/help mons gives more info.");
   } else {
-    if (!strcmp(*argv, "reghelp")) {
+    if (!strcmp(*argv, "regs")) {
       Serial.println("All CTL registers use the top bit (0x80) to initiate action, and clear it when complete.");
       Serial.println("0  [POWERCTL]: [3:0] power on individual slaves");
       Serial.println("1   [DFLTCTL]: [3:0] slaves which come on automatically at power on");
@@ -248,7 +247,7 @@ int cmdHelp(int argc, char **argv) {
       Serial.println("5   [COMMAND]: command to send slave");
       Serial.println("6       [ARG]: argument to send slave");
       Serial.println("7       [ACK]: returned byte from slave");
-    } else if (!strcmp(*argv, "monhelp")) {
+    } else if (!strcmp(*argv, "mons")) {
       Serial.println("0: 15V_MON");
       Serial.println("1: CUR0");
       Serial.println("2: CUR1");
@@ -301,7 +300,8 @@ int cmdWrite(int argc, char **argv) {
     Serial.println("w needs a register to write to and value to write");
     return 0;
   }
-  reg = strtoul(*argv, NULL, 0);
+  reg = strtoul(argv[0], NULL, 0);
+  val = strtoul(argv[1], NULL, 0);
   if (reg < REG_MAX) {
     if (val < 256) {
       i2cRegisterMap[reg] = val;
