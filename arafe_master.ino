@@ -59,7 +59,7 @@ const int EN[4] = {18,16,32,30};  //{LED1, LED2, LED3, LED4}; for debug
 //Communications select output:
 const int COMMS_SEL[2] = {9,10};
 //Analog ports for monitoring:
-int analogPort[8] = { 14, 17, 15, 13, 33, 34, 139, 138};
+const int analogPort[8] = { 14, 17, 15, 13, 33, 34, 139, 138};
 //0:    15V_MON
 //1:    CUR0, current to Slave 0
 //2:    CUR1, current to Slave 1
@@ -204,7 +204,7 @@ void setup()
   cmdAdd("w", cmdWrite);
   cmdAdd("sn", cmdAssign);
   cmdAdd("d", cmdDump);
-  cmdAdd("?", cmdHelp);
+  cmdAdd("help", cmdHelp);
   Serial1.begin(9600);           // start serial for slave communication.
   Serial1.setTimeout(1000);      //Serial redBytes will timeout after 1000ms (this is only for information. The default is 1000ms anyway).
 
@@ -271,6 +271,7 @@ int cmdDump(int argc, char **argv) {
     Serial.print(": ");
     Serial.println(i2cRegisterMap[i], HEX);
   }
+  return 0;
 }
 
 int cmdRead(int argc, char **argv) {
