@@ -18,8 +18,9 @@
 //****Serial debug port: This is a custom design: Start delimiter "c", end delimiter "!". Everything in between will be treated as one transfer.
 //********************** NOTE: When typing in a serial monitor, the pointer and all data bytes must be put in as 2-digit hexadecimal numbers. 
 //********************** Example: 0x8 has to be typed as 08.
+#define REG_MAX 8
 unsigned char currentRegisterPointer = 0;
-unsigned char i2cRegisterMap[8] ={0,0,0,0,0,0,0,0};
+unsigned char i2cRegisterMap[REG_MAX] ={0,0,0,0,0,0,0,0};
 //The register map is:
 //***** Register 0: POWERCTL
 //************* Bits [3:0]: indicates which slaves are currently powered on
@@ -28,7 +29,7 @@ unsigned char i2cRegisterMap[8] ={0,0,0,0,0,0,0,0};
 //************* Bits [3:0]: indicates which slaves are currently powered on by default
 //************* Bit [7]: Actually update the non-volatile copy of this register. Clear when update is complete.
 //***** Register 2: MONCTL
-//************* Bits [2:0]: Monitoring value to convert (see next page)
+//************* Bits [3:0]: Monitoring value to convert (see next page)
 //************* Bits [5:4]: Low 2 bits of the conversion
 //************* Bit [7]: Actually convert the monitoring value. Clear when MONITOR/MONCTL are updated.
 //***** Register 3: MONITOR
@@ -67,9 +68,17 @@ int analogPort[8] = { 14, 17, 15, 13, 33, 34, 139, 138};
 //5:    !FAULT
 //6:    3.3VCC
 //7:    device temperature
+//8:    firmware version
+//9:    board ID (assigned via serial port only)
+//10-15: unused currently
 
 //Need Wire library for I2C comms.
 #include <Wire.h>
+#include <Cmd.h>
+const char *cmd_banner = ">>> ARAFE-Master Command Interface";
+const char *cmd_prompt = "ARAFE> ";
+const char *cmd_unrecog = "Unknown command.";
+#define FIRMWARE_VERSION 2
 
 //The following structure is set up to store and recall a default start setup:
 //The signature: Is checked on startup, to see if a setup has been stored already. If not, all slaves are kept powered off.
@@ -82,6 +91,7 @@ typedef struct info_t {
   unsigned char signature;              //< Indicates if the info structure is up to date.
   unsigned char revision;               //< What board revision this is.
   unsigned char power_default;  //< Holds the default values for the power scheme of the slaves.
+  unsigned char serno;
 } info_t;
 
 //The location to store this in non-volatile memory: The address 0x1800 points to the info section of the memory.
@@ -189,6 +199,15 @@ void setup()
 
 
   //Setup serial connections: Baudrate is 9600.
+  cmdInit(9600);
+  cmdAdd("r", cmdRead);
+  cmdAdd("w", cmdWrite);
+  cmdAdd("assign", cmdAssign);
+  cmdAdd("help", cmdHelp);
+  cmdAdd("?", cmdHelp);
+  cmdAdd("dump", cmdDump);
+  cmdAdd("reghelp", cmdReghelp);
+  cmdAdd("monhelp", cmdMonhelp);
   Serial.begin(9600);            // start serial for debug port to computer.   
   Serial1.begin(9600);           // start serial for slave communication.
   Serial1.setTimeout(1000);      //Serial redBytes will timeout after 1000ms (this is only for information. The default is 1000ms anyway).
@@ -196,15 +215,119 @@ void setup()
   analogReference(INTERNAL1V5);
 }
 
+int cmdAssign(int argc, char **argv) {
+  unsigned int serno;
+  argc--;
+  argv++;
+  if (!argc) {
+    Serial.println("assign needs a board id");
+    return 0;
+  }
+  serno = strtoul(*argv, NULL, 0);
+  if (serno < 256) {
+    my_info->serno = serno;
+  } else {
+    Serial.println("serial number must be 8 bits (less than 256)");
+  }
+  return 0;
+}
+  
+int cmdHelp(int argc, char **argv) {
+  Serial.println("r: r [register number] - read register");
+  Serial.println("w: w [register number] [value] - write value to register");
+  Serial.println("assign: assign [serial number] - assign serial number");
+  Serial.println("dump: dump - print all registers");
+  Serial.println("reghelp: reghelp - more help on registers");
+  Serial.println("monhelp: monhelp - more help on monitoring");
+  return 0;
+}
 
+int cmdReghelp(int argc, char **argv) {
+  Serial.println("All CTL registers use the top bit (0x80) to initiate action, and clear it when complete.");
+  Serial.println("0  [POWERCTL]: [3:0] power on individual slaves");
+  Serial.println("1   [DFLTCTL]: [3:0] slaves which come on automatically at power on");
+  Serial.println("2    [MONCTL]: [3:0] mon value to convert, [5:4] low 2 bits of conversion");
+  Serial.println("3   [MONITOR]: [7:0] high 8 bits of conversion");
+  Serial.println("4  [SLAVECTL]: [1:0] slave to address, [6]: set if command timed out");
+  Serial.println("5   [COMMAND]: command to send slave");
+  Serial.println("6       [ARG]: argument to send slave");
+  Serial.println("7       [ACK]: returned byte from slave");
+  return 0;
+}
+
+
+int cmdMonhelp(int argc, char **argv) {
+  Serial.println("0: 15V_MON");
+  Serial.println("1: CUR0");
+  Serial.println("2: CUR1");
+  Serial.println("3: CUR2");
+  Serial.println("4: CUR3");
+  Serial.println("5: FAULT");
+  Serial.println("6: 3.3V");
+  Serial.println("7: device temp");
+  Serial.println("8: firmware version");
+  Serial.println("9: serial number");
+  return 0;
+}
+
+int cmdDump(int argc, char **argv) {
+  int i;
+  for (i=0;i<REG_MAX;i++) {
+    Serial.print(i, DEC);
+    Serial.print(": ");
+    Serial.println(i2cRegisterMap[i], HEX);
+  }
+}
+
+int cmdRead(int argc, char **argv) {
+  unsigned int reg;
+  argc--;
+  argv++;
+  if (!argc) {
+    Serial.println("r needs a register to read from");
+    return 0;
+  }  
+  reg = strtoul(*argv, NULL, 0);
+  if (reg < REG_MAX) {
+    Serial.println(i2cRegisterMap[reg], DEC);
+  } else {
+    Serial.print("register must be less than ");
+    Serial.println(REG_MAX, DEC);
+  }
+  return 0;
+}
+
+int cmdWrite(int argc, char **argv) {
+  unsigned int reg;
+  unsigned int val;
+  argc--;
+  argv++;
+  if (argc < 2) {
+    Serial.println("w needs a register to write to and value to write");
+    return 0;
+  }
+  reg = strtoul(*argv, NULL, 0);
+  if (reg < REG_MAX) {
+    if (val < 256) {
+      i2cRegisterMap[reg] = val;
+    } else {
+      Serial.println("value must be 8 bits (less than 256)");
+    }
+  } else {
+    Serial.println("register must be less than ");
+    Serial.println(REG_MAX, DEC);
+  }
+  return 0;
+}
 
 //Start the program:
 void loop()
 {
 
+  cmdPoll();
 
   //All functionality can be accessed via the Serial debug port.
-  waitForSerialDebugInput();
+  //  waitForSerialDebugInput();
 
   //This chaecks the control register for the EXEC signal to go high and starts the requested process.
   waitForControl();
@@ -215,44 +338,44 @@ void loop()
 
 
 //This module handles the serial input if any:
-void waitForSerialDebugInput(){
-  char DEBUG_BUFFER[10];
-  int DEBUG_BYTES = 0;
-  int receivedEvent = 0;
-  int inhibit=0;
-  char data;
-  //Write all incoming bytes into a buffer:
-  if(Serial.available() ){
-      if(Serial.read()=='c'){inhibit=1;}
-  }
-  while(inhibit==1){ 
-   if(0 < Serial.available() ){
-    data = Serial.read();
-    if(data=='!'){ inhibit=0;}
-    else{
-          DEBUG_BUFFER[DEBUG_BYTES] = data;
-#if DEBUG_MODE  
-          Serial.print("Input was:  ");
-          Serial.println(int(DEBUG_BUFFER[DEBUG_BYTES]), DEC);
-          Serial.print("\n");
-#endif
-          DEBUG_BYTES++;
-        }
-    }
-  }
-  if(DEBUG_BYTES>1){
-    //Write buffer into register space:
-    currentRegisterPointer= (ascii(DEBUG_BUFFER[0]) <<4) | ascii(DEBUG_BUFFER[1]) ;
-    currentRegisterPointer&=0x7;
-    int howMany = DEBUG_BYTES/2;
-    for (int i=1;i<howMany;i++) {
-      i2cRegisterMap[currentRegisterPointer++] = (ascii(DEBUG_BUFFER[i*2]) <<4) | ascii(DEBUG_BUFFER[i*2+1]);
-      currentRegisterPointer&=0x7;
-    }
-    
-    
-  }
-}
+//void waitForSerialDebugInput(){
+//  char DEBUG_BUFFER[10];
+//  int DEBUG_BYTES = 0;
+//  int receivedEvent = 0;
+//  int inhibit=0;
+//  char data;
+//  //Write all incoming bytes into a buffer:
+//  if(Serial.available() ){
+//      if(Serial.read()=='c'){inhibit=1;}
+//  }
+//  while(inhibit==1){ 
+//   if(0 < Serial.available() ){
+//    data = Serial.read();
+//    if(data=='!'){ inhibit=0;}
+//    else{
+//          DEBUG_BUFFER[DEBUG_BYTES] = data;
+//#if DEBUG_MODE  
+//          Serial.print("Input was:  ");
+//          Serial.println(int(DEBUG_BUFFER[DEBUG_BYTES]), DEC);
+//          Serial.print("\n");
+//#endif
+//          DEBUG_BYTES++;
+//        }
+//    }
+//  }
+//  if(DEBUG_BYTES>1){
+//    //Write buffer into register space:
+//    currentRegisterPointer= (ascii(DEBUG_BUFFER[0]) <<4) | ascii(DEBUG_BUFFER[1]) ;
+//    currentRegisterPointer&=0x7;
+//    int howMany = DEBUG_BYTES/2;
+//    for (int i=1;i<howMany;i++) {
+//      i2cRegisterMap[currentRegisterPointer++] = (ascii(DEBUG_BUFFER[i*2]) <<4) | ascii(DEBUG_BUFFER[i*2+1]);
+//      currentRegisterPointer&=0x7;
+//    }
+//    
+//    
+//  }
+//}
 
 
 
@@ -320,18 +443,31 @@ void waitForControl(){
       Serial.print(i2cRegisterMap[3]);
 #endif
     //Convert monitoring value
-      uint16_t monData = readMonitoring(i2cRegisterMap[2] & 0x7);
-      i2cRegisterMap[2] |= ( (monData & 0x3) << 4 );
-      i2cRegisterMap[3] |= ( (monData & 0x3ff) >> 2 );
-      i2cRegisterMap[2]&=~(0x80);
-#if DEBUG_MODE
-      Serial.print("After:");
-      Serial.print(i2cRegisterMap[2]);
-      Serial.print(", ");
-      Serial.print(i2cRegisterMap[3]);      
-      Serial.print("\n");
-#endif      
-//      delay(100);
+      if (i2cRegisterMap[2] & 0x08) {
+        uint8_t intMon = i2cRegisterMap[2] & 0x7;
+        // These are internal monitoring values.
+        if (intMon == 0) {
+          // firmware version
+          i2cRegisterMap[3] = FIRMWARE_VERSION;
+          i2cRegisterMap[2] &= ~(0x80);
+        } else if (intMon == 1) {
+          // board ID
+          i2cRegisterMap[3] = my_info->serno;
+          i2cRegisterMap[2] &= ~(0x80);
+        }
+      } else {
+        uint16_t monData = readMonitoring(i2cRegisterMap[2] & 0x7);
+        i2cRegisterMap[2] |= ( (monData & 0x3) << 4 );
+        i2cRegisterMap[3] |= ( (monData & 0x3ff) >> 2 );
+        i2cRegisterMap[2]&=~(0x80);
+ #if DEBUG_MODE
+        Serial.print("After:");
+        Serial.print(i2cRegisterMap[2]);
+        Serial.print(", ");
+        Serial.print(i2cRegisterMap[3]);      
+        Serial.print("\n");
+ #endif      
+      }
   }  
 
   else if(i2cRegisterMap[4] & 0x80){
