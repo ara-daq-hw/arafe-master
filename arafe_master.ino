@@ -202,13 +202,9 @@ void setup()
   cmdInit(9600);
   cmdAdd("r", cmdRead);
   cmdAdd("w", cmdWrite);
-  cmdAdd("assign", cmdAssign);
-  cmdAdd("help", cmdHelp);
+  cmdAdd("sn", cmdAssign);
+  cmdAdd("d", cmdDump);
   cmdAdd("?", cmdHelp);
-  cmdAdd("dump", cmdDump);
-  cmdAdd("reghelp", cmdReghelp);
-  cmdAdd("monhelp", cmdMonhelp);
-  Serial.begin(9600);            // start serial for debug port to computer.   
   Serial1.begin(9600);           // start serial for slave communication.
   Serial1.setTimeout(1000);      //Serial redBytes will timeout after 1000ms (this is only for information. The default is 1000ms anyway).
 
@@ -220,7 +216,7 @@ int cmdAssign(int argc, char **argv) {
   argc--;
   argv++;
   if (!argc) {
-    Serial.println("assign needs a board id");
+    Serial.println("sn needs a board id");
     return 0;
   }
   serno = strtoul(*argv, NULL, 0);
@@ -233,40 +229,38 @@ int cmdAssign(int argc, char **argv) {
 }
   
 int cmdHelp(int argc, char **argv) {
-  Serial.println("r: r [register number] - read register");
-  Serial.println("w: w [register number] [value] - write value to register");
-  Serial.println("assign: assign [serial number] - assign serial number");
-  Serial.println("dump: dump - print all registers");
-  Serial.println("reghelp: reghelp - more help on registers");
-  Serial.println("monhelp: monhelp - more help on monitoring");
-  return 0;
-}
-
-int cmdReghelp(int argc, char **argv) {
-  Serial.println("All CTL registers use the top bit (0x80) to initiate action, and clear it when complete.");
-  Serial.println("0  [POWERCTL]: [3:0] power on individual slaves");
-  Serial.println("1   [DFLTCTL]: [3:0] slaves which come on automatically at power on");
-  Serial.println("2    [MONCTL]: [3:0] mon value to convert, [5:4] low 2 bits of conversion");
-  Serial.println("3   [MONITOR]: [7:0] high 8 bits of conversion");
-  Serial.println("4  [SLAVECTL]: [1:0] slave to address, [6]: set if command timed out");
-  Serial.println("5   [COMMAND]: command to send slave");
-  Serial.println("6       [ARG]: argument to send slave");
-  Serial.println("7       [ACK]: returned byte from slave");
-  return 0;
-}
-
-
-int cmdMonhelp(int argc, char **argv) {
-  Serial.println("0: 15V_MON");
-  Serial.println("1: CUR0");
-  Serial.println("2: CUR1");
-  Serial.println("3: CUR2");
-  Serial.println("4: CUR3");
-  Serial.println("5: FAULT");
-  Serial.println("6: 3.3V");
-  Serial.println("7: device temp");
-  Serial.println("8: firmware version");
-  Serial.println("9: serial number");
+  argc--;
+  argv++;
+  if (!argc) {
+    Serial.println("r: r [register number] - read register");
+    Serial.println("w: w [register number] [value] - write value to register");
+    Serial.println("sn: sn [serial number] - assign serial number");
+    Serial.println("d: d - print all registers");
+    Serial.println("?: ? [regs|mons] - prints help. ? regs/? mons gives more info.");
+  } else {
+    if (!strcmp(*argv, "reghelp")) {
+      Serial.println("All CTL registers use the top bit (0x80) to initiate action, and clear it when complete.");
+      Serial.println("0  [POWERCTL]: [3:0] power on individual slaves");
+      Serial.println("1   [DFLTCTL]: [3:0] slaves which come on automatically at power on");
+      Serial.println("2    [MONCTL]: [3:0] mon value to convert, [5:4] low 2 bits of conversion");
+      Serial.println("3   [MONITOR]: [7:0] high 8 bits of conversion");
+      Serial.println("4  [SLAVECTL]: [1:0] slave to address, [6]: set if command timed out");
+      Serial.println("5   [COMMAND]: command to send slave");
+      Serial.println("6       [ARG]: argument to send slave");
+      Serial.println("7       [ACK]: returned byte from slave");
+    } else if (!strcmp(*argv, "monhelp")) {
+      Serial.println("0: 15V_MON");
+      Serial.println("1: CUR0");
+      Serial.println("2: CUR1");
+      Serial.println("3: CUR2");
+      Serial.println("4: CUR3");
+      Serial.println("5: FAULT");
+      Serial.println("6: 3.3V");
+      Serial.println("7: device temp");
+      Serial.println("8: firmware version");
+      Serial.println("9: serial number");
+    }
+  }
   return 0;
 }
 
