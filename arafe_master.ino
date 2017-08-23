@@ -207,7 +207,8 @@ void setup()
   cmdAdd("help", cmdHelp);
   Serial1.begin(9600);           // start serial for slave communication.
   Serial1.setTimeout(1000);      //Serial redBytes will timeout after 1000ms (this is only for information. The default is 1000ms anyway).
-
+  
+  analogReference(INTERNAL1V5); //set the analog reference
 }
 
 int cmdAssign(int argc, char **argv) {
